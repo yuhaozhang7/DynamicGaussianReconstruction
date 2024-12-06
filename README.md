@@ -11,7 +11,7 @@ This branch is the implmentation for **MVSplat-based** model.
 
 In our project, we mainly use the synthetic dataset from [D-NeRF](https://www.albertpumarola.com/research/D-NeRF/index.html).
 
-
+You can find the resized version of the dataset [here](https://drive.google.com/file/d/18uvbL3XJcYS3gOvxmvCwMwiKGaiqn_Jz/view)
 
 
 
