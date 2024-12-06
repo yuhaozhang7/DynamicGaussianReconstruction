@@ -79,6 +79,6 @@ There are couple of important arguments for the render.py:
 
 - use_depth : if used, the depth predictor will be used
 - num_views : number of context views of he Multi-view Transformer, must be the same with the one used in training, REQUIRED
-- path_model : path to the model that will be used for evaluation, REQUIRED 
+- path_model : path to the model (multi-view transformer + MLP, can be found in the model_saves folder after training) that will be used for evaluation, REQUIRED 
 
 
