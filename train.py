@@ -117,7 +117,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        opt.warm_up = 1000
         if iteration == opt.warm_up:
             print("Start training deformable network")
         
