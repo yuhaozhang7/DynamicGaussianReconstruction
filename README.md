@@ -1,13 +1,33 @@
 ### INSTALLATION INSTRUCTIONS
 
+```shell
+git clone -b MVSplat https://github.com/yuhaozhang7/DynamicGaussianReconstruction.git
+cd DynamicGaussianReconstruction
+
+conda create -n mvp_env python=3.10
+conda activate mvp_env
+
+pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu118
+pip install -r requirements.txt
+
+```
+Alternatively,
+
 - create an environment using python 3.10 (also works with python 3.7 but requires some changes to some packages)
 - for the next two steps, install everything to the environment you created in the last step
 - go to [Deformable 3D Gaussians](https://github.com/ingra14m/Deformable-3D-Gaussians) codebase and follow the installation instructions (except the python version)
 - go to [MVSplat](https://github.com/donydchen/mvsplat) codebase and follow the installation instructions
 
+
 ### VERSION
 
 This version of the code is for running and rendering on a single scene. The architecture includes the version of the deformation network that takes image features as input. 
+
+
+### Model saves
+
+The model saves can be found [here](https://drive.google.com/drive/folders/1y2yxnW9KBr9nxgNsVVmtuhbxTqqN3xzh?usp=sharing)
+
 
 ### Train
 
