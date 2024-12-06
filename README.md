@@ -45,6 +45,7 @@ This version of the code is for running and rendering on a single scene. The arc
 
 The model saves can be found [here](https://drive.google.com/drive/folders/1y2yxnW9KBr9nxgNsVVmtuhbxTqqN3xzh?usp=sharing)
 
+Then, change the `source_path` option in `cfg_args` to the true path to D-NeRF dataset, and you can evaluate using the commands above.
 
 ### Train
 
