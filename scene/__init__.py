@@ -16,7 +16,6 @@ from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from scene.deform_model import DeformModel
-from scene.gaussian_predictor import GaussianPredictor
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
@@ -93,11 +92,12 @@ class Scene:
                                                                            args)
 
         if self.loaded_iter:
-            self.gaussians.load_ply(os.path.join(self.model_path,
-                                                 "point_cloud",
-                                                 "iteration_" + str(self.loaded_iter),
-                                                 "point_cloud.ply"),
-                                    og_number_points=len(scene_info.point_cloud.points))
+            nope = True
+            # self.gaussians.load_ply(os.path.join(self.model_path,
+            #                                      "point_cloud",
+            #                                      "iteration_" + str(self.loaded_iter),
+            #                                      "point_cloud.ply"),
+            #                         og_number_points=len(scene_info.point_cloud.points))
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 

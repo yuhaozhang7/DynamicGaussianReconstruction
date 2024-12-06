@@ -21,15 +21,13 @@ from utils.pose_utils import pose_spherical, render_wander_path
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
-from scene.gaussian_predictor import GaussianPredictor
 import imageio
 import numpy as np
 import time
+from scene.mvsplat_wrapper import MVSplat, config, rotation_matrix_to_quaternion
+import random
 
-
-def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
-               deform, gaussian_predictor):
-
+def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, deform,mvsplat):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
@@ -40,25 +38,26 @@ def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views,
 
     t_list = []
 
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         if load2gpu_on_the_fly:
             view.load2device()
-
         fid = view.fid
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
         depth = results["depth"]
@@ -72,13 +71,12 @@ def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views,
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         fid = view.fid
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
 
         torch.cuda.synchronize()
         t_start = time.time()
 
-        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
 
         torch.cuda.synchronize()
@@ -90,9 +88,7 @@ def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views,
     print(f'Test FPS: \033[1;35m{fps:.5f}\033[0m, Num. of GS: {xyz.shape[0]}')
 
 
-def interpolate_time(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
-                     deform, gaussian_predictor):
-
+def interpolate_time(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, deform,mvsplat):
     render_path = os.path.join(model_path, name, "interpolate_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "interpolate_{}".format(iteration), "depth")
 
@@ -105,23 +101,25 @@ def interpolate_time(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, 
     idx = torch.randint(0, len(views), (1,)).item()
     view = views[idx]
 
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
 
     renderings = []
     for t in tqdm(range(0, frame, 1), desc="Rendering progress"):
         fid = torch.Tensor([t / (frame - 1)]).cuda()
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
         renderings.append(to8b(rendering.cpu().numpy()))
@@ -135,9 +133,7 @@ def interpolate_time(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, 
     imageio.mimwrite(os.path.join(render_path, 'video.mp4'), renderings, fps=30, quality=8)
 
 
-def interpolate_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
-                     timer, gaussian_predictor):
-
+def interpolate_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, timer, mvsplat):
     render_path = os.path.join(model_path, name, "interpolate_view_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "interpolate_view_{}".format(iteration), "depth")
     # acc_path = os.path.join(model_path, name, "interpolate_view_{}".format(iteration), "acc")
@@ -152,19 +148,22 @@ def interpolate_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, 
     idx = torch.randint(0, len(views), (1,)).item()
     view = views[idx]  # Choose a specific time for rendering
 
-    # render_poses = torch.stack(render_wander_path(view), 0)
-    render_poses = torch.stack([pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180, 180, frame + 1)[:-1]],
-                               0)
-
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+    render_poses = torch.stack(render_wander_path(view), 0)
+    # render_poses = torch.stack([pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180, 180, frame + 1)[:-1]],
+    #                            0)
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
+
 
     renderings = []
     for i, pose in enumerate(tqdm(render_poses, desc="Rendering progress")):
@@ -178,9 +177,8 @@ def interpolate_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, 
         view.reset_extrinsic(R, T)
 
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
         renderings.append(to8b(rendering.cpu().numpy()))
@@ -196,8 +194,7 @@ def interpolate_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, 
     imageio.mimwrite(os.path.join(render_path, 'video.mp4'), renderings, fps=30, quality=8)
 
 
-def interpolate_all(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
-                    deform, gaussian_predictor):
+def interpolate_all(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, deform,mvsplat):
     render_path = os.path.join(model_path, name, "interpolate_all_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "interpolate_all_{}".format(iteration), "depth")
 
@@ -210,17 +207,21 @@ def interpolate_all(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, v
     to8b = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
 
     idx = torch.randint(0, len(views), (1,)).item()
-    view = views[idx]
+    view = views[idx]  # Choose a specific time for rendering
 
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
 
     renderings = []
     for i, pose in enumerate(tqdm(render_poses, desc="Rendering progress")):
@@ -234,9 +235,8 @@ def interpolate_all(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, v
         view.reset_extrinsic(R, T)
 
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
         renderings.append(to8b(rendering.cpu().numpy()))
@@ -250,8 +250,7 @@ def interpolate_all(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, v
     imageio.mimwrite(os.path.join(render_path, 'video.mp4'), renderings, fps=30, quality=8)
 
 
-def interpolate_poses(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
-                      timer, gaussian_predictor):
+def interpolate_poses(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, timer,mvsplat):
     render_path = os.path.join(model_path, name, "interpolate_pose_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "interpolate_pose_{}".format(iteration), "depth")
 
@@ -271,15 +270,18 @@ def interpolate_poses(model_path, load2gpt_on_the_fly, is_6dof, name, iteration,
     t_begin = view_begin.T
     t_end = view_end.T
 
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
 
     renderings = []
     for i in tqdm(range(frame), desc="Rendering progress"):
@@ -294,7 +296,7 @@ def interpolate_poses(model_path, load2gpt_on_the_fly, is_6dof, name, iteration,
 
         xyz = gaussians.get_xyz
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input)
+        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
 
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
@@ -306,9 +308,8 @@ def interpolate_poses(model_path, load2gpt_on_the_fly, is_6dof, name, iteration,
     imageio.mimwrite(os.path.join(render_path, 'video.mp4'), renderings, fps=60, quality=8)
 
 
-def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline,
-                              background,
-                              timer, gaussian_predictor):
+def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background,
+                              timer, mvsplat):
     render_path = os.path.join(model_path, name, "interpolate_hyper_view_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "interpolate_hyper_view_{}".format(iteration), "depth")
     # acc_path = os.path.join(model_path, name, "interpolate_all_{}".format(iteration), "acc")
@@ -325,15 +326,18 @@ def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, it
         R.append(view.R)
         T.append(view.T)
 
-    mean, color_features, opacity, scale, img_features = gaussian_predictor(views)
+    context = mvsplat.camera_to_context(random.sample(views, config['num_context_views']),
+                                        num_views=config['num_context_views'])
+    # # context =0
+    mean, color_features, opacity, scale,feature_img = mvsplat.forward(context, global_step=0)
     gaussians._xyz = mean[0]
-    gaussians._features_img = img_features[0]
     gaussians._features_dc = color_features[0, :, 0:1]
     gaussians._features_rest = color_features[0, :, 1:]
     gaussians._opacity = opacity[0]
     gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
     gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
     gaussians._rotation[:, 0] = 1.0
+    gaussians._features_img = feature_img
 
     view = views[0]
     renderings = []
@@ -360,9 +364,8 @@ def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, it
         view.reset_extrinsic(R_cur, T_cur)
 
         xyz = gaussians.get_xyz
-        features_img = gaussians.get_features_img
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input, features_img.detach())
+        d_xyz, d_rotation, d_scaling = timer.step(xyz.detach(), time_input,gaussians.get_features_img.detach())
 
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
@@ -375,20 +378,18 @@ def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, it
 
 
 def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool,
-                mode: str, reverse_views: bool):
+                mode: str,path_model,use_depth):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
         deform = DeformModel(dataset.is_blender, dataset.is_6dof)
-        deform.load_weights(dataset.model_path, iteration=iteration)
+        deform.load_weights(dataset.model_path)
 
         bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        in_size = 20
-        feature_map_ch_dim = 128
-        gaussian_predictor = GaussianPredictor(in_size, 3 * in_size, feature_map_ch_dim).cuda()
-        gaussian_predictor.load_weights(dataset.model_path, iteration=iteration)
+        mvsplat = MVSplat(config, 'cuda', use_depth=use_depth,with_pe=True).to('cuda')
+        mvsplat.load_weights(path_model)
 
         if mode == "render":
             render_func = render_set
@@ -404,32 +405,14 @@ def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, 
             render_func = interpolate_all
 
         if not skip_train:
-            views = scene.getTrainCameras().copy()
-
-            if reverse_views:
-                views.sort(key=lambda cam: cam.fid.item())
-                views.reverse()
-                interval = 1 / (len(views) - 1) if len(views) > 1 else 1
-                for idx, cam in enumerate(views):
-                    cam.fid = torch.tensor([idx * interval], device=cam.fid.device)
-
             render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "train", scene.loaded_iter,
-                        views, gaussians, pipeline,
-                        background, deform, gaussian_predictor)
+                        scene.getTrainCameras(), gaussians, pipeline,
+                        background, deform, mvsplat)
 
         if not skip_test:
-            views = scene.getTestCameras().copy()
-
-            if reverse_views:
-                views.sort(key=lambda cam: cam.fid.item())
-                views.reverse()
-                interval = 1 / (len(views) - 1) if len(views) > 1 else 1
-                for idx, cam in enumerate(views):
-                    cam.fid = torch.tensor([idx * interval], device=cam.fid.device)
-
             render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "test", scene.loaded_iter,
-                        views, gaussians, pipeline,
-                        background, deform, gaussian_predictor)
+                        scene.getTestCameras(), gaussians, pipeline,
+                        background, deform, mvsplat)
 
 
 if __name__ == "__main__":
@@ -442,11 +425,14 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--mode", default='render', choices=['render', 'time', 'view', 'all', 'pose', 'original'])
-    parser.add_argument("--reverse", default=False, type=bool)
+    parser.add_argument('--path_model',required=True)
+    parser.add_argument("--num_views", type=int, required=True)
+    parser.add_argument('--use_depth', action="store_true")
+
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
-
+    config['num_context_views'] = args.num_views
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.mode, args.reverse)
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.mode,args.path_model,args.use_depth)

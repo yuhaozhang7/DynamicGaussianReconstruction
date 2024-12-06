@@ -67,7 +67,7 @@ class GaussianModel:
     @property
     def get_xyz(self):
         return self._xyz
-    
+
     @property
     def get_features_img(self):
         return self._features_img
@@ -147,7 +147,7 @@ class GaussianModel:
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
-        for i in range(self._features_img.shape[1]): # ------------------------------------------------
+        for i in range(self._features_img.shape[1]):  # ------------------------------------------------
             l.append(f'f_img_{i}')  # ------------------------------------------------
         for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
             l.append('f_dc_{}'.format(i))
@@ -165,7 +165,7 @@ class GaussianModel:
 
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
-        f_img = self._features_img.detach().cpu().numpy() # ------------------------------------------------
+        f_img = self._features_img.detach().cpu().numpy()  # ------------------------------------------------
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         opacities = self._opacity.detach().cpu().numpy()
@@ -194,10 +194,12 @@ class GaussianModel:
                         np.asarray(plydata.elements[0]["z"])), axis=1)
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
 
-        img_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_img_")] # ------------------------------------------------
+        img_f_names = [p.name for p in plydata.elements[0].properties if
+                       p.name.startswith("f_img_")]  # ------------------------------------------------
         features_img = np.zeros((xyz.shape[0], len(img_f_names)))
         for idx, attr_name in enumerate(img_f_names):
-            features_img[:, idx] = np.asarray(plydata.elements[0][attr_name]) # ------------------------------------------------
+            features_img[:, idx] = np.asarray(
+                plydata.elements[0][attr_name])  # ------------------------------------------------
 
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -223,8 +225,9 @@ class GaussianModel:
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
-        self._features_img = nn.Parameter( # ------------------------------------------------
-            torch.tensor(features_img, dtype=torch.float, device="cuda").requires_grad_(True)) # ------------------------------------------------
+        self._features_img = nn.Parameter(  # ------------------------------------------------
+            torch.tensor(features_img, dtype=torch.float, device="cuda").requires_grad_(
+                True))  # ------------------------------------------------
         self._features_dc = nn.Parameter(
             torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(
                 True))

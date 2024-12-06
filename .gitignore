@@ -1,9 +1,14 @@
 *.pyc
 .vscode
-output
+output/*
 build
 diff_rasterization/diff_rast.egg-info
 diff_rasterization/dist
 tensorboard_3d
 screenshots
-.idea
+.idea\*
+wandb
+d-nerf/*
+.run/*
+.idea/*
+assets/*

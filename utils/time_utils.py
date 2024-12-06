@@ -1,3 +1,4 @@
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -56,13 +57,13 @@ class Embedder:
 
 
 class DeformNetwork(nn.Module):
-    def __init__(self, D=8, W=256, input_ch=3, output_ch=59, multires=10, is_blender=False, is_6dof=False, f_dim=128):
+    def __init__(self, D=8, W=256, input_ch=3, output_ch=59, multires=10, is_blender=False, is_6dof=False, t_dim=128):
         super(DeformNetwork, self).__init__()
         self.D = D
         self.W = W
         self.input_ch = input_ch
         self.output_ch = output_ch
-        self.t_multires = 6 if is_blender else 10
+        self.t_multires = 6 if is_blender else 10 # t_dim // 2 # original code: 6 if is_blender else 10
         self.skips = [D // 2]
 
         self.embed_time_fn, time_input_ch = get_embedder(self.t_multires, 1)
@@ -78,15 +79,15 @@ class DeformNetwork(nn.Module):
                 nn.Linear(256, self.time_out))
 
             self.linear = nn.ModuleList(
-                [nn.Linear(xyz_input_ch + self.time_out + f_dim, W)] + [
-                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + xyz_input_ch + self.time_out + f_dim, W)
+                [nn.Linear(xyz_input_ch + self.time_out + t_dim, W)] + [
+                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + xyz_input_ch + self.time_out + t_dim, W)
                     for i in range(D - 1)]
             )
 
         else:
             self.linear = nn.ModuleList(
-                [nn.Linear(self.input_ch + f_dim, W)] + [
-                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch + f_dim, W)
+                [nn.Linear(self.input_ch + t_dim, W)] + [
+                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch + t_dim, W)
                     for i in range(D - 1)]
             )
 
@@ -105,6 +106,9 @@ class DeformNetwork(nn.Module):
         t_emb = self.embed_time_fn(t)
         if self.is_blender:
             t_emb = self.timenet(t_emb)  # better for D-NeRF Dataset
+        # else:
+        #     t_emb = t_emb[:, :t_emb.shape[1] - 1]
+        # t_emb = t_emb + f_img
         x_emb = self.embed_fn(x)
         h = torch.cat([x_emb, t_emb, f_img], dim=-1)
         for i, l in enumerate(self.linear):

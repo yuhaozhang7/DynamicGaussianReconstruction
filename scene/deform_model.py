@@ -9,8 +9,8 @@ from utils.general_utils import get_expon_lr_func
 
 
 class DeformModel:
-    def __init__(self, is_blender=False, is_6dof=False, f_dim=128):
-        self.deform = DeformNetwork(is_blender=is_blender, is_6dof=is_6dof, f_dim=f_dim).cuda()
+    def __init__(self, is_blender=False, is_6dof=False, t_dim=128):
+        self.deform = DeformNetwork(is_blender=is_blender, is_6dof=is_6dof, t_dim=t_dim).cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
 
