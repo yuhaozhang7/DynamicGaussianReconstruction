@@ -193,7 +193,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations,use_depth
                     best_iteration = iteration
 
 
-            if iteration % 5000 == 0:
+            if iteration  in saving_iterations:
                 mvsplat.save_weights(args.model_path,iteration)
                 print("\n[ITER {}] Saving Model".format(iteration))
                 scene.save(iteration)

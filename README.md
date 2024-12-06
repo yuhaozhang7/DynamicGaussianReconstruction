@@ -82,3 +82,6 @@ There are couple of important arguments for the render.py:
 - path_model : path to the model (multi-view transformer + MLP, can be found in the model_saves folder after training) that will be used for evaluation, REQUIRED 
 
 
+### Logging using wandb
+
+If you want to use wandb for logging, uncomment the lines 29, 190, 202, 323 and 359 in the train.py file. 
