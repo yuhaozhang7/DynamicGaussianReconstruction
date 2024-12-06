@@ -298,6 +298,8 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     except:
         pcd = None
 
+    # train_cam_infos = train_cam_infos[:5]  # Only use one camera for testing
+
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
@@ -426,7 +428,7 @@ def readNerfiesCameras(path):
     else:  # for hypernerf
         train_img = dataset_json['ids'][::4]
         all_img = train_img
-        ratio = 0.5
+        ratio = 1 / 4
 
     train_num = len(train_img)
 

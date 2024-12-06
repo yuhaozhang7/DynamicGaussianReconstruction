@@ -35,6 +35,7 @@ class GaussianModel:
         self.max_sh_degree = sh_degree
 
         self._xyz = torch.empty(0)
+        self._features_img = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
         self._scaling = torch.empty(0)
@@ -66,6 +67,10 @@ class GaussianModel:
     @property
     def get_xyz(self):
         return self._xyz
+    
+    @property
+    def get_features_img(self):
+        return self._features_img
 
     @property
     def get_features(self):
@@ -142,6 +147,8 @@ class GaussianModel:
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
+        for i in range(self._features_img.shape[1]): # ------------------------------------------------
+            l.append(f'f_img_{i}')  # ------------------------------------------------
         for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
             l.append('f_dc_{}'.format(i))
         for i in range(self._features_rest.shape[1] * self._features_rest.shape[2]):
@@ -158,6 +165,7 @@ class GaussianModel:
 
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
+        f_img = self._features_img.detach().cpu().numpy() # ------------------------------------------------
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         opacities = self._opacity.detach().cpu().numpy()
@@ -167,7 +175,7 @@ class GaussianModel:
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_img, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
@@ -185,6 +193,11 @@ class GaussianModel:
                         np.asarray(plydata.elements[0]["y"]),
                         np.asarray(plydata.elements[0]["z"])), axis=1)
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+        img_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_img_")] # ------------------------------------------------
+        features_img = np.zeros((xyz.shape[0], len(img_f_names)))
+        for idx, attr_name in enumerate(img_f_names):
+            features_img[:, idx] = np.asarray(plydata.elements[0][attr_name]) # ------------------------------------------------
 
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -210,6 +223,8 @@ class GaussianModel:
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._features_img = nn.Parameter( # ------------------------------------------------
+            torch.tensor(features_img, dtype=torch.float, device="cuda").requires_grad_(True)) # ------------------------------------------------
         self._features_dc = nn.Parameter(
             torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(
                 True))

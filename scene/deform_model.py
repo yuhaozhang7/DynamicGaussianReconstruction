@@ -1,3 +1,4 @@
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,13 +9,13 @@ from utils.general_utils import get_expon_lr_func
 
 
 class DeformModel:
-    def __init__(self, is_blender=False, is_6dof=False):
-        self.deform = DeformNetwork(is_blender=is_blender, is_6dof=is_6dof).cuda()
+    def __init__(self, is_blender=False, is_6dof=False, f_dim=128):
+        self.deform = DeformNetwork(is_blender=is_blender, is_6dof=is_6dof, f_dim=f_dim).cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
 
-    def step(self, xyz, time_emb):
-        return self.deform(xyz, time_emb)
+    def step(self, xyz, time_emb, img_features):
+        return self.deform(xyz, time_emb, img_features)
 
     def train_setting(self, training_args):
         l = [

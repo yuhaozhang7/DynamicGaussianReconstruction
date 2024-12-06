@@ -12,16 +12,21 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim, kl_divergence
+from utils.loss_utils import l1_loss, l2_loss, ssim, kl_divergence
+from utils.dataset_utils import sample_small_dataset
 from gaussian_renderer import render, network_gui
 import sys
-from scene import Scene, GaussianModel, DeformModel
+from scene import Scene, GaussianModel, DeformModel, GaussianPredictor
 from utils.general_utils import safe_state, get_linear_noise_func
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import wandb
+from torchvision.transforms import functional as F
+from PIL import Image
+import random
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -30,15 +35,21 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+# os.environ['WANDB_MODE'] = 'disabled'
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations):
+    feature_map_ch_dim = 128
+    input_images_size = 20
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    deform = DeformModel(dataset.is_blender, dataset.is_6dof)
+    deform = DeformModel(dataset.is_blender, dataset.is_6dof, feature_map_ch_dim)
     deform.train_setting(opt)
+    gaussian_predictor = GaussianPredictor(input_images_size, 3 * input_images_size, feature_map_ch_dim).cuda()
+    gaussian_predictor_optimizer = torch.optim.Adam(gaussian_predictor.parameters(), lr=1e-4)
 
     scene = Scene(dataset, gaussians)
-    gaussians.training_setup(opt)
+    sampled_dataset = sample_small_dataset(scene, num=80, size=20, diff=6, reverse=True)
+    # gaussians.training_setup(opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -71,42 +82,89 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         iter_start.record()
 
-        # Every 1000 its we increase the levels of SH up to a maximum degree
-        if iteration % 1000 == 0:
-            gaussians.oneupSHdegree()
-
         # Pick a random Camera
-        if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
+        if viewpoint_stack is None:
+            cameras = random.choice(sampled_dataset)
+            viewpoint_stack = cameras.copy()
 
         total_frame = len(viewpoint_stack)
         time_interval = 1 / total_frame
 
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-        if dataset.load2gpu_on_the_fly:
-            viewpoint_cam.load2device()
-        fid = viewpoint_cam.fid
+        # viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
 
-        if iteration < opt.warm_up:
-            d_xyz, d_rotation, d_scaling = 0.0, 0.0, 0.0
-        else:
-            N = gaussians.get_xyz.shape[0]
-            time_input = fid.unsqueeze(0).expand(N, -1)
+        mean, color_features, opacity, scale, img_features = gaussian_predictor(cameras, None)
+        gaussians._xyz = mean[0]
+        gaussians._features_img = img_features[0]
+        gaussians._features_dc = color_features[0, :, 0:1]
+        gaussians._features_rest = color_features[0, :, 1:]
+        gaussians._opacity = opacity[0]
+        gaussians._scaling = torch.ones(scale.size(1), 3, device='cuda') * scale[0, :]
+        gaussians._rotation = torch.zeros(scale.size(1), 4, device='cuda')
+        gaussians._rotation[:, 0] = 1.0
 
-            ast_noise = 0 if dataset.is_blender else torch.randn(1, 1, device='cuda').expand(N, -1) * time_interval * smooth_term(iteration)
-            d_xyz, d_rotation, d_scaling = deform.step(gaussians.get_xyz.detach(), time_input + ast_noise)
+        # log min & max of features, opacity and scaling
+        wandb.log({"min_features": torch.min(gaussians._features_dc).item(),
+                   "max_features": torch.max(gaussians._features_dc).item(),
+                   "min_opacity": torch.min(gaussians._opacity).item(),
+                   "max_opacity": torch.max(gaussians._opacity).item(),
+                   "min_scaling": torch.min(gaussians._scaling).item(),
+                   "max_scaling": torch.max(gaussians._scaling).item(),
+                   "min_xyz": torch.min(gaussians._xyz).item(),
+                   "max_xyz": torch.max(gaussians._xyz).item()
+                   }, step=iteration)
 
-        # Render
-        render_pkg_re = render(viewpoint_cam, gaussians, pipe, background, d_xyz, d_rotation, d_scaling, dataset.is_6dof)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg_re["render"], render_pkg_re[
-            "viewspace_points"], render_pkg_re["visibility_filter"], render_pkg_re["radii"]
-        # depth = render_pkg_re["depth"]
+        # Every 1000 its we increase the levels of SH up to a maximum degree
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
 
-        # Loss
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        opt.warm_up = 1000
+        if iteration == opt.warm_up:
+            print("Start training deformable network")
+        
+        loss = torch.tensor(0.0, requires_grad=True, device='cuda')
+
+        for viewpoint_cam in viewpoint_stack:
+
+            if dataset.load2gpu_on_the_fly:
+                viewpoint_cam.load2device()
+            fid = viewpoint_cam.fid
+
+            if iteration < opt.warm_up:
+                d_xyz, d_rotation, d_scaling = 0.0, 0.0, 0.0
+            else:
+                N = gaussians.get_xyz.shape[0]
+                time_input = fid.unsqueeze(0).expand(N, -1)
+
+                ast_noise = 0 if dataset.is_blender else torch.randn(1, 1, device='cuda').expand(N,
+                                                                                                -1) * time_interval * smooth_term(
+                    iteration)
+                
+                if iteration < opt.warm_up + 5000:
+                    d_xyz, d_rotation, d_scaling = deform.step(gaussians.get_xyz.detach(), time_input + ast_noise, gaussians.get_features_img.detach())
+                else:
+                    d_xyz, d_rotation, d_scaling = deform.step(gaussians.get_xyz.detach(), time_input + ast_noise, gaussians.get_features_img)
+
+            # Render
+            render_pkg_re = render(viewpoint_cam, gaussians, pipe, background, d_xyz, d_rotation, d_scaling,
+                                dataset.is_6dof)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg_re["render"], render_pkg_re[
+                "viewspace_points"], render_pkg_re["visibility_filter"], render_pkg_re["radii"]
+            # depth = render_pkg_re["depth"]
+            wandb.log({"min_image": torch.min(image).item(),
+                    "max_image": torch.max(image).item()}, step=iteration)
+
+            # Loss
+            gt_image = viewpoint_cam.original_image.cuda()
+            Ll2 = l2_loss(image, gt_image)
+            loss = loss + Ll2
+
+        loss /= len(viewpoint_stack)
+        viewpoint_stack = None
         loss.backward()
+        max_grad = max(param.grad.abs().max().item() for param in gaussian_predictor.parameters() if param.grad is not None)
+        wandb.log({"max_grad": max_grad}, step=iteration)
+
+        torch.nn.utils.clip_grad_norm_(gaussian_predictor.parameters(), max_norm=1.0)
 
         iter_end.record()
 
@@ -121,16 +179,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
+            if iteration % 1000 == 0:
+                tensor = image * 255.0 
+                tensor = tensor.to('cpu').byte()
+                tensor = F.to_pil_image(tensor)
+                os.makedirs(f"output/{PROJECT_NAME}/images", exist_ok=True)
+                tensor.save(f"output/{PROJECT_NAME}/images/image_{iteration}.png")
 
             # Keep track of max radii in image-space for pruning
-            gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
-                                                                 radii[visibility_filter])
+            # gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
+            #                                                      radii[visibility_filter])
 
             # Log and save
-            cur_psnr = training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
+            cur_psnr = training_report(tb_writer, iteration, Ll2, loss, l2_loss, iter_start.elapsed_time(iter_end),
                                        testing_iterations, scene, render, (pipe, background), deform,
                                        dataset.load2gpu_on_the_fly, dataset.is_6dof)
             if iteration in testing_iterations:
+                wandb.log({"psnr": cur_psnr}, step=iteration)
                 if cur_psnr.item() > best_psnr:
                     best_psnr = cur_psnr.item()
                     best_iteration = iteration
@@ -139,26 +204,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
                 deform.save_weights(args.model_path, iteration)
+                gaussian_predictor.save_weights(args.model_path, iteration)
 
-            # Densification
-            if iteration < opt.densify_until_iter:
-                viewspace_point_tensor_densify = render_pkg_re["viewspace_points_densify"]
-                gaussians.add_densification_stats(viewspace_point_tensor_densify, visibility_filter)
-
-                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-
-                if iteration % opt.opacity_reset_interval == 0 or (
-                        dataset.white_background and iteration == opt.densify_from_iter):
-                    gaussians.reset_opacity()
+            wandb.log({"loss": loss.item(),
+                       "ema_loss": ema_loss_for_log}, step=iteration)
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step()
-                gaussians.update_learning_rate(iteration)
+                gaussian_predictor_optimizer.step()
                 deform.optimizer.step()
-                gaussians.optimizer.zero_grad(set_to_none=True)
+
+                gaussian_predictor_optimizer.zero_grad()
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
@@ -213,10 +269,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                         viewpoint.load2device()
                     fid = viewpoint.fid
                     xyz = scene.gaussians.get_xyz
+                    features_img = scene.gaussians.get_features_img
                     time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-                    d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input)
+                    d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input, features_img.detach())
                     image = torch.clamp(
-                        renderFunc(viewpoint, scene.gaussians, *renderArgs, d_xyz, d_rotation, d_scaling, is_6dof)["render"],
+                        renderFunc(viewpoint, scene.gaussians, *renderArgs, d_xyz, d_rotation, d_scaling, is_6dof)[
+                            "render"],
                         0.0, 1.0)
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     images = torch.cat((images, image.unsqueeze(0)), dim=0)
@@ -249,6 +307,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
 
 if __name__ == "__main__":
+    PROJECT_NAME = "dnerf_standup_small"
+    wandb.init(
+        project="mvp_project",
+        name=PROJECT_NAME,
+    )
+
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
@@ -258,11 +322,14 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int,
-                        default=[5000, 6000, 7_000] + list(range(10000, 40001, 1000)))
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 10_000, 20_000, 30_000, 40000])
+                        default=[1] + list(range(1000, 400_001, 1000)))
+    parser.add_argument("--save_iterations", nargs="+", type=int,
+                        default=[1] +list(range(1000, 400_001, 1000)))
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
+
+    setattr(args, "model_path", f"output/{PROJECT_NAME}")
 
     print("Optimizing " + args.model_path)
 
@@ -276,3 +343,5 @@ if __name__ == "__main__":
 
     # All done
     print("\nTraining complete.")
+
+    wandb.finish()

@@ -56,7 +56,7 @@ class Embedder:
 
 
 class DeformNetwork(nn.Module):
-    def __init__(self, D=8, W=256, input_ch=3, output_ch=59, multires=10, is_blender=False, is_6dof=False):
+    def __init__(self, D=8, W=256, input_ch=3, output_ch=59, multires=10, is_blender=False, is_6dof=False, f_dim=128):
         super(DeformNetwork, self).__init__()
         self.D = D
         self.W = W
@@ -78,15 +78,15 @@ class DeformNetwork(nn.Module):
                 nn.Linear(256, self.time_out))
 
             self.linear = nn.ModuleList(
-                [nn.Linear(xyz_input_ch + self.time_out, W)] + [
-                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + xyz_input_ch + self.time_out, W)
+                [nn.Linear(xyz_input_ch + self.time_out + f_dim, W)] + [
+                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + xyz_input_ch + self.time_out + f_dim, W)
                     for i in range(D - 1)]
             )
 
         else:
             self.linear = nn.ModuleList(
-                [nn.Linear(self.input_ch, W)] + [
-                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch, W)
+                [nn.Linear(self.input_ch + f_dim, W)] + [
+                    nn.Linear(W, W) if i not in self.skips else nn.Linear(W + self.input_ch + f_dim, W)
                     for i in range(D - 1)]
             )
 
@@ -98,20 +98,20 @@ class DeformNetwork(nn.Module):
             self.branch_v = nn.Linear(W, 3)
         else:
             self.gaussian_warp = nn.Linear(W, 3)
-        self.gaussian_rotation = nn.Linear(W, 4)
-        self.gaussian_scaling = nn.Linear(W, 3)
+        # self.gaussian_rotation = nn.Linear(W, 4)
+        self.gaussian_scaling = nn.Linear(W, 1)
 
-    def forward(self, x, t):
+    def forward(self, x, t, f_img):
         t_emb = self.embed_time_fn(t)
         if self.is_blender:
             t_emb = self.timenet(t_emb)  # better for D-NeRF Dataset
         x_emb = self.embed_fn(x)
-        h = torch.cat([x_emb, t_emb], dim=-1)
+        h = torch.cat([x_emb, t_emb, f_img], dim=-1)
         for i, l in enumerate(self.linear):
             h = self.linear[i](h)
             h = F.relu(h)
             if i in self.skips:
-                h = torch.cat([x_emb, t_emb, h], -1)
+                h = torch.cat([x_emb, t_emb, f_img, h], -1)
 
         if self.is_6dof:
             w = self.branch_w(h)
@@ -124,6 +124,7 @@ class DeformNetwork(nn.Module):
         else:
             d_xyz = self.gaussian_warp(h)
         scaling = self.gaussian_scaling(h)
-        rotation = self.gaussian_rotation(h)
+        scaling = torch.ones([scaling.shape[0], 3], device=scaling.device) * scaling
+        rotation = 0.0 # self.gaussian_rotation(h)
 
         return d_xyz, rotation, scaling
