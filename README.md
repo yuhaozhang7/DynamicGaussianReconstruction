@@ -5,8 +5,6 @@ This project is forked from [Deformable 3D Gaussians for High-Fidelity Monocular
 ![Our Teaser image](assets/teaser.gif)
 ![Our Teaser image](assets/teaser2.gif)
 
-- [ ] Check if all modes of rendering supported
-
 This repository contains the implementation for the project **Improved Dynamic Gaussian Reconstruction with Multi-Scene Training**. In this project, we aim to develop a model to predict Gaussians for a dynamic monocular scene to allow novel view synthesis.
 
 
@@ -59,3 +57,9 @@ We have modified the code to support several modes for rendering:
 - `original`: time and view synthesis tasks for real-world dataset
 
 
+### Using our checkpoints
+
+Please download the checkpoint models from 
+[Google Drive](https://drive.google.com/drive/folders/16d6MSmLQSwDm04G-4os-QtZUPnxvELGA?usp=sharing).
+
+Then, change the `source_path` option in `cfg_args` to the true path to D-NeRF dataset, and you can evaluate using the commands above.
