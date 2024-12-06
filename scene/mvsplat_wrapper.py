@@ -323,6 +323,7 @@ class MVSplat(torch.nn.Module):
 
 def rotation_matrix_to_quaternion(R):
     """
+    IMPLEMENTED BY CHATGPT
     Differentiable conversion of a 3x3 rotation matrix to a quaternion (w, x, y, z).
     Args:
         R: torch.Tensor of shape (3, 3) or (batch_size, 3, 3)
