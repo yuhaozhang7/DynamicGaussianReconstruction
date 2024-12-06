@@ -5,8 +5,6 @@ This project is forked from [Deformable 3D Gaussians for High-Fidelity Monocular
 ![Our Teaser image](assets/teaser.gif)
 ![Our Teaser image](assets/teaser2.gif)
 
-- [ ] Change sub-folder name
-- [ ] Change the whole repo name (check git clone command below)
 - [ ] Check if all modes of rendering supported
 
 This repository contains the implementation for the project **Improved Dynamic Gaussian Reconstruction with Multi-Scene Training**. In this project, we aim to develop a model to predict Gaussians for a dynamic monocular scene to allow novel view synthesis.
@@ -14,28 +12,8 @@ This repository contains the implementation for the project **Improved Dynamic G
 
 ## Dataset
 
-In our project, we mainly use:
+In our project, we mainly use the synthetic dataset from [D-NeRF](https://www.albertpumarola.com/research/D-NeRF/index.html).
 
-- synthetic dataset from [D-NeRF](https://www.albertpumarola.com/research/D-NeRF/index.html).
-- real-world dataset from [NeRF-DS](https://jokeryan.github.io/projects/nerf-ds/) and [Hyper-NeRF](https://hypernerf.github.io/).
-
-You could organize the datasets as follows, recommended by the authors of Deformable 3D Gaussians:
-
-```shell
-├── data
-│   | D-NeRF 
-│     ├── hook
-│     ├── standup 
-│     ├── ...
-│   | NeRF-DS
-│     ├── as
-│     ├── basin
-│     ├── ...
-│   | HyperNeRF
-│     ├── interp
-│     ├── misc
-│     ├── vrig
-```
 
 ## Run
 
@@ -43,8 +21,8 @@ You could organize the datasets as follows, recommended by the authors of Deform
 
 This project is an incomplete clone of the original one. To set up the environment, please set up an environment using the original repository:
 ```shell
-git clone https://github.com/ingra14m/Deformable-3D-Gaussians --recursive
-cd Deformable-3D-Gaussians
+git clone git@github.com:yuhaozhang7/DynamicGaussianReconstruction.git
+cd DynamicGaussianReconstruction
 
 conda create -n deformable_gaussian_env python=3.7
 conda activate deformable_gaussian_env
@@ -55,12 +33,6 @@ pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 --extra-index-url http
 # install dependencies
 pip install -r requirements.txt
 ```
-
-Then, you could clone our repository:
-```shell
-git clone git@github.com:Andy-Zhou2/MVP_Course_Project.git
-```
-
 
 ### Train
 
