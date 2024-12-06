@@ -5,6 +5,10 @@
 - go to [Deformable 3D Gaussians](https://github.com/ingra14m/Deformable-3D-Gaussians) codebase and follow the installation instructions (except the python version)
 - go to [MVSplat](https://github.com/donydchen/mvsplat) codebase and follow the installation instructions
 
+### VERSION
+
+This version of the code is for running and rendering on a single scene. The architecture includes the version of the deformation network that takes image features as input. 
+
 ### Train
 
 ```shell
@@ -13,7 +17,7 @@ python train.py -s path/to/your/d-nerf/dataset -m output/exp-name --eval --is_bl
 There are several important parameters:
  - num_views : the number of context views used in the Multi-view transformer, default is 2
  - warmup : number of iterations the model will be trained without deformation at the start, after that the deformation network will start training, default=4000
- - pretrained_backbone_path : the path to the pretrained multi-view transformer backbone provided at the MVSplat codebase, if not provided, the model will be created from scratch
+ - pretrained_backbone_path : the path to the pretrained multi-view transformer backbone provided at the MVSplat codebase, if not provided, the model will be created from scratch. The checkpoint is included in the repo at checkpoints/gmdepth-scale1-resumeflowthings-scannet-5d9d7964.pth 
  - use_depth : if used, the depth predictor of the MVSplat will be used instead of the MLP we implemented. usage : --use_depth
  - -s : path to the dataset
  - -m : path to the output
