@@ -7,7 +7,7 @@ This project is forked from [Deformable 3D Gaussians for High-Fidelity Monocular
 
 This repository contains the implementation for the project **Improved Dynamic Gaussian Reconstruction with Multi-Scene Training**. In this project, we aim to develop a model to predict Gaussians for a dynamic monocular scene to allow novel view synthesis.
 
-This branch is the implmentation for **UNet-based** model.
+This branch is the implmentation for **UNet-based** model. For **MVSplat-based model**, please refer to the `MVSplat` branch.
 
 ## Dataset
 
