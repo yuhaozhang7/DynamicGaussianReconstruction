@@ -1,3 +1,20 @@
+# Improved Dynamic Gaussian Reconstruction with Multi-Scene Training
+
+This project is forked from [Deformable 3D Gaussians for High-Fidelity Monocular Dynamic Scene Reconstruction](https://github.com/ingra14m/Deformable-3D-Gaussians).
+
+
+This repository contains the implementation for the project **Improved Dynamic Gaussian Reconstruction with Multi-Scene Training**. In this project, we aim to develop a model to predict Gaussians for a dynamic monocular scene to allow novel view synthesis.
+
+This branch is the implmentation for **MVSplat-based** model.
+
+## Dataset
+
+In our project, we mainly use the synthetic dataset from [D-NeRF](https://www.albertpumarola.com/research/D-NeRF/index.html).
+
+
+
+
+
 ### INSTALLATION INSTRUCTIONS
 
 ```shell
