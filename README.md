@@ -7,6 +7,7 @@ This project is forked from [Deformable 3D Gaussians for High-Fidelity Monocular
 
 This repository contains the implementation for the project **Improved Dynamic Gaussian Reconstruction with Multi-Scene Training**. In this project, we aim to develop a model to predict Gaussians for a dynamic monocular scene to allow novel view synthesis.
 
+This branch is the implmentation for **UNet-based** model.
 
 ## Dataset
 
@@ -19,7 +20,7 @@ In our project, we mainly use the synthetic dataset from [D-NeRF](https://www.al
 
 This project is an incomplete clone of the original one. To set up the environment, please set up an environment using the original repository:
 ```shell
-git clone git@github.com:yuhaozhang7/DynamicGaussianReconstruction.git
+git clone https://github.com/yuhaozhang7/DynamicGaussianReconstruction.git --recursive
 cd DynamicGaussianReconstruction
 
 conda create -n deformable_gaussian_env python=3.7
@@ -44,9 +45,11 @@ python train.py -s path/to/your/d-nerf/dataset -m output/exp-name --eval --is_bl
 ### Render & Evaluation
 
 ```shell
-python render.py -m output/exp-name --mode render
+python render.py -m output/exp-name --mode render --reverse True
 python metrics.py -m output/exp-name
 ```
+
+Use `--reverse` to specify whether to reverse the order of inputs to the model.
 
 We have modified the code to support several modes for rendering:
 
