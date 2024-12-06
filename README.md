@@ -13,6 +13,7 @@ This branch is the implmentation for **UNet-based** model. For **MVSplat-based m
 
 In our project, we mainly use the synthetic dataset from [D-NeRF](https://www.albertpumarola.com/research/D-NeRF/index.html).
 
+As the images may be too large to fit into GPU, we have prepared a down-sampled dataset as well: [D-NeRF-downsampled](https://drive.google.com/file/d/18uvbL3XJcYS3gOvxmvCwMwiKGaiqn_Jz/view?usp=sharing).
 
 ## Run
 
